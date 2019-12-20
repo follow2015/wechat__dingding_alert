@@ -29,7 +29,7 @@ def access_token(Corpid,Secret):
             file.write(response.text)
             file.close()
         return access_token
-#print(access_token())
+
 def is_ok(value):
      return value is False
 

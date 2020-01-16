@@ -7,7 +7,7 @@ import os
 import logging
 from logging.handlers import TimedRotatingFileHandler
 
-LOG_FILE = "zabbix_alert.log"
+LOG_FILE = "/var/log/zabbix_wechat/zabbix_alert.log"
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 fh = TimedRotatingFileHandler(LOG_FILE,when='D',interval=1,backupCount=30)
@@ -25,7 +25,7 @@ def access_token(Corpid,Secret):
         return False
     else:
         access_token = response.json()['access_token']
-        with open('zabbix_access_token.json','w') as file:
+        with open('/tmp/zabbix_access_token.json','w') as file:
             file.write(response.text)
             file.close()
         return access_token
@@ -36,7 +36,7 @@ def is_ok(value):
 @retry(retry=retry_if_result(is_ok),stop=stop_after_attempt(4),wait=wait_fixed(2))
 def SendMessage(Subject,Content):
     try:
-        file = open('zabbix_access_token.json','r')
+        file = open('/tmp/zabbix_access_token.json','r')
         Token = json.load(file)['access_token']
         file.close()
     except:

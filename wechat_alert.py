@@ -56,7 +56,7 @@ def SendMessage(Subject,Content):
     }
     response = requests.post(url, data=json.dumps((payload),ensure_ascii=False).encode("utf-8").decode("latin1"), params=querystring)
     if response.json()["errcode"] == 40014 or response.json()["errcode"] == 42001:
-        file = 'zabbix_access_token.json'
+        file = '/tmp/zabbix_access_token.json'
         if os.path.exists(file):
             os.remove(file)
         else:

@@ -15,6 +15,8 @@
 
 5.token失效自动更新。
 
+6.wechat_zabbix_alert 更新了图片连接，需要先在手机浏览器上登陆一次zabbix。
+
 使用本脚本需要自行注册企业微信及新建应用才能使用
 
 企业微信申请地址：https://work.weixin.qq.com

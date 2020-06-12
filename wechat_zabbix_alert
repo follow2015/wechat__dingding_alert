@@ -19,7 +19,7 @@ logger.addHandler(fh)
 
 pattern = re.compile('ItemID:(\d+)', re.S)
 itemid = re.findall(pattern, sys.argv[3])[0]
-graphs_url = "http://zabbix.domain.com/chart.php?period=3600&itemids[]=%s" % itemid #使用自己的zabbix地址
+graphs_url = "http://zabbix.domain.com/chart.php?period=3600&itemids%%5b%%5d=%s" % itemid #使用自己的zabbix地址
 new_details = '<a href=\"' +  graphs_url + '\">点击查看图片，右上角浏览器打开。</a>'
 
 def access_token(Corpid,Secret):

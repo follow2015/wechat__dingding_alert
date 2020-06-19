@@ -22,3 +22,4 @@
 企业微信申请地址：https://work.weixin.qq.com
 
 7.增加了钉钉监控告警的脚本，需要先行打开钉钉的自定义群机器人。
+8.wechat_alert_tuxing 为微信图片告警

@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+#_*_coding:utf-8 _*_
+import requests
+import json
+from tenacity import *
+import sys
+import os
+import logging
+from logging.handlers import TimedRotatingFileHandler
+import re
+import pymysql
+import time
+
+
+LOG_FILE = "/var/log/zabbix_wechat/zabbix_alert.log"
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+fh = TimedRotatingFileHandler(LOG_FILE,when='D',interval=1,backupCount=30)
+datefmt = '%Y-%m-%d %H:%M:%S'
+format_str = '%(asctime)s %(levelname)s %(message)s '
+formatter = logging.Formatter(format_str, datefmt)
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+
+time_tag=time.strftime("%Y%m%d%H%M%S", time.localtime())
+graph_name='gaojing_'+time_tag+'.png'
+graph_path='/var/www/zabbix/gaojing'  #自己新建图片目录
+
+def login():
+    login_data={}
+    login_data['name']='admin' #zabbix用户名
+    login_data['autologin']='1'
+    login_data['password']='xxxxxx'  #zabbix 密码
+    login_data['enter']='Sign in'
+    login_post = requests.post(url='http://zabbix.xxxxx.com/index.php?',data=login_data,headers={'Connection':'close'})  #url换成自己的zabbix地址
+    login_cookie = login_post.cookies
+    return login_cookie
+
+def get_itemid():
+    pattern = re.compile('ItemID:(\d+)', re.S)
+    itemid = re.findall(pattern, sys.argv[3])[0]
+    return itemid
+
+def get_graphid():
+    itemid = get_itemid()
+    conn = pymysql.connect("localhost","root","123456","zabbix")  #zabbix数据库用户名密码
+    cur = conn.cursor()
+    cur.execute("SELECT graphid  FROM `graphs_items` WHERE `itemid`=%s;" % itemid)
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    graphid = re.findall(r'\d+', str(result))
+    graphid = str(graphid).lstrip('[\'').rstrip('\']')
+    return graphid
+graphid = get_graphid()
+if graphid.isdigit() == True:
+    graph_url = 'http://zabbix.xxxxxx.com/chart2.php'  #换成自己zabbix地址
+    graph_params = {"graphid": graphid,"width": "800","height": "200"}
+    x = requests.post(url=graph_url,params=graph_params,cookies=login(), headers={'Connection': 'close'})
+    graph_name1 = os.path.join(graph_path, graph_name)
+    with open(graph_name1,'wb') as f:
+        f.write(x.content)
+    graph_gaojing_url = 'http://zabbix.xxxx.com/gaojing/%s' % graph_name    #换成自己zabbix地址
+else:
+    itemid = get_itemid()
+    graph_url = 'http://zabbix.xxxxxx.com/chart.php'   #换成自己zabbix地址
+    graph_params = {"itemids[]=":itemid , "width": "800", "height": "200"}
+    x = requests.post(url=graph_url, params=graph_params, cookies=login(), headers={'Connection': 'close'})
+    graph_name1 = os.path.join(graph_path, graph_name)
+    with open(graph_name1, 'wb') as f:
+        f.write(x.content)
+    graph_gaojing_url = 'http://zabbix.xxxxx.com/gaojing/%s' % graph_name  #换成自己zabbix地址
+
+def access_token():
+    url = "https://qyapi.weixin.qq.com/cgi-bin/gettoken"
+    querystring = {"corpid": "corpid", "corpsecret": "corpsecret"} #换成自己的corpid 和 corpsecret
+    response = requests.request("GET", url, params=querystring)
+    if response.json()['errcode'] != 0:
+        return False
+    else:
+        access_token = response.json()['access_token']
+        with open('/tmp/zabbix_access_token.json','w') as file:
+            file.write(response.text)
+            file.close()
+        return access_token
+
+def is_ok(value):
+     return value is False
+
+@retry(retry=retry_if_result(is_ok),stop=stop_after_attempt(4),wait=wait_fixed(2))
+def SendMessage(Subject,Content):
+    try:
+        file = open('/tmp/zabbix_access_token.json','r')
+        Token = json.load(file)['access_token']
+        file.close()
+    except:
+        Token = access_token()
+
+    url = "https://qyapi.weixin.qq.com/cgi-bin/message/send"
+    querystring = {"access_token": Token}
+    payload = {
+        "toparty": toparty, #换成自己的
+        "msgtype": "news",
+        "agentid": agentid,#换成自己的
+        "news": {
+            "articles": [
+                {
+                    "title": Subject,
+                    "description": Content,
+                    "picurl": graph_gaojing_url
+                }
+            ]
+        },
+        "enable_id_trans": 0,
+        "enable_duplicate_check": 0,
+        "duplicate_check_interval": 1800
+    }
+    response = requests.post(url, data=json.dumps((payload),ensure_ascii=False).encode("utf-8").decode("latin1"), params=querystring)
+    if response.json()["errcode"] == 40014 or response.json()["errcode"] == 42001:
+        file = '/tmp/zabbix_access_token.json'
+        if os.path.exists(file):
+            os.remove(file)
+        else:
+            access_token()
+        return False
+    elif response.json()["errcode"] != 0:
+        return False
+    else:
+        return response.json()
+
+if __name__ == '__main__':
+    Subject = str(sys.argv[2])
+    Content = str(sys.argv[3])
+    logging.info(SendMessage(Subject,Content))

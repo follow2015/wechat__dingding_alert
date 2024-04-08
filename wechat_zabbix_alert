@@ -1,6 +1,7 @@
-#_*_coding:utf-8 _*_
+# _*_coding:utf-8 _*_
 import requests
 import json
+import re
 from tenacity import *
 import sys
 import os
@@ -8,9 +9,9 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 
 LOG_FILE = "/var/log/zabbix_wechat/zabbix_alert.log"
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-fh = TimedRotatingFileHandler(LOG_FILE,when='D',interval=1,backupCount=30)
+fh = TimedRotatingFileHandler(LOG_FILE, when='D', interval=1, backupCount=30)
 datefmt = '%Y-%m-%d %H:%M:%S'
 format_str = '%(asctime)s %(levelname)s %(message)s '
 formatter = logging.Formatter(format_str, datefmt)
@@ -19,62 +20,59 @@ logger.addHandler(fh)
 
 pattern = re.compile('ItemID:(\d+)', re.S)
 itemid = re.findall(pattern, sys.argv[3])[0]
-graphs_url = "http://zabbix.domain.com/chart.php?period=3600&itemids%%5b%%5d=%s" % itemid #使用自己的zabbix地址
+graphs_url = "http://zabbix.domain.com/chart.php?period=3600&itemids%%5b%%5d=%s" % itemid  # 使用自己的zabbix地址
 new_details = '%s 手机点击链接，右上角更多，用浏览器打开，先用浏览器登陆zabbix以后保存密码。' % graphs_url
 
-def access_token(Corpid,Secret):
+
+def access_token(Corpid, Secret):
     url = "https://qyapi.weixin.qq.com/cgi-bin/gettoken"
-    querystring = {"corpid": Corpid, "corpsecret": Secret}
-    response = requests.request("GET", url, params=querystring)
+    params = {"corpid": Corpid, "corpsecret": Secret}
+    response = requests.get(url, params=params)
     if response.json()['errcode'] != 0:
         return False
     else:
         access_token = response.json()['access_token']
-        with open('/tmp/zabbix_access_token.json','w') as file:
+        with open('/tmp/zabbix_access_token.json', 'w') as file:
             file.write(response.text)
-            file.close()
         return access_token
 
-def is_ok(value):
-     return value is False
 
-@retry(retry=retry_if_result(is_ok),stop=stop_after_attempt(4),wait=wait_fixed(2))
-def SendMessage(Subject,Content):
+def is_ok(value):
+    return value is False
+
+
+@retry(retry=retry_if_result(is_ok), stop=stop_after_attempt(4), wait=wait_fixed(2))
+def SendMessage(Subject, Content):
     try:
-        file = open('/tmp/zabbix_access_token.json','r')
-        Token = json.load(file)['access_token']
-        file.close()
-    except:
-        Token = access_token()
+        with open('/tmp/zabbix_access_token.json', 'r') as file:
+            Token = json.load(file)['access_token']
+    except FileNotFoundError:
+        Token = access_token(Corpid, Secret)
 
     url = "https://qyapi.weixin.qq.com/cgi-bin/message/send"
-    querystring = {"access_token": Token}
+    params = {"access_token": Token}
     payload = {
-        "toparty": 部门ID,                                #https://work.weixin.qq.com/api/doc/90000/90135/90665#secret
+        "toparty": 部门ID,
         "msgtype": "text",
-        "agentid": 应用ID,                                #https://work.weixin.qq.com/api/doc/90000/90135/90665#secret
-        "text":
-        {
-              "content": Subject + '\n' + Content + '\n' + new_details
+        "agentid": 应用ID,
+        "text": {
+            "content": Subject + '\n' + Content + '\n' + new_details
         },
         "safe": 0
     }
-    response = requests.post(url, data=json.dumps((payload),ensure_ascii=False).encode("utf-8").decode("latin1"), params=querystring)
-    if response.json()["errcode"] == 40014 or response.json()["errcode"] == 42001:
+    response = requests.post(url, json=payload, params=params)
+    if response.json()["errcode"] in [40014, 42001]:
         file = '/tmp/zabbix_access_token.json'
         if os.path.exists(file):
             os.remove(file)
-        else:
-            access_token()
-        return False
-    elif response.json()["errcode"] != 0:
-        return False
-    else:
-        return response.json()
+        Token = access_token(Corpid, Secret)
+
+    return response.json()
+
 
 if __name__ == '__main__':
     Subject = str(sys.argv[2])
     Content = str(sys.argv[3])
-    Corpid = "企业ID"                                #https://work.weixin.qq.com/api/doc/90000/90135/90665#corpid
-    Secret = "应用密钥"                              #https://work.weixin.qq.com/api/doc/90000/90135/90665#secret
-    logging.info(SendMessage(Subject,Content))
+    Corpid = "企业ID"  # https://work.weixin.qq.com/api/doc/90000/90135/90665#corpid
+    Secret = "应用密钥"  # https://work.weixin.qq.com/api/doc/90000/90135/90665#secret
+    logging.info(SendMessage(Subject, Content))
